@@ -33,6 +33,8 @@ dependencies:
   flutter:
     sdk: flutter
   google_mlkit_face_detection: ^0.4.0
+  image: ^3.1.0
+  rxdart: ^0.27.5
 
 dev_dependencies:
   flutter_lints: ^1.0.0
