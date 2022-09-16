@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 class HomePage extends StatefulWidget {
   final String title;
@@ -22,15 +23,14 @@ class _HomePageState extends State<HomePage> {
 
   bool _cameraInitialized = false;
 
-  void _capture() async {
-    await _cameraController.takePicture();
+  Future<XFile> _capture() async {
+    return _cameraController.takePicture();
   }
 
   void _initializeCamera() async {
     var selectedCamera =
         widget.availableCameras[widget.availableCameras.length > 1 ? 1 : 0];
-    _cameraController =
-        CameraController(selectedCamera, ResolutionPreset.medium);
+    _cameraController = CameraController(selectedCamera, ResolutionPreset.high);
     _cameraController.initialize().then((_) async {
       var androidInfo = await DeviceInfoPlugin().androidInfo;
       if (androidInfo.isPhysicalDevice != null &&
@@ -48,6 +48,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     _initializeCamera();
     super.initState();
+  }
+
+  @override
+  void dispose() {
+    _cameraController.dispose();
+    super.dispose();
   }
 
   @override
@@ -76,9 +82,21 @@ class _HomePageState extends State<HomePage> {
             )
           : const Center(child: CircularProgressIndicator()),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
+        onPressed: () async {
           if (_cameraInitialized) {
-            _capture();
+            var image = await _capture();
+            var faceDetector = FaceDetector(
+              options: FaceDetectorOptions(enableClassification: true),
+            );
+            var faces = await faceDetector
+                .processImage(InputImage.fromFilePath(image.path));
+            var result = 'no face detected';
+            if (faces.isNotEmpty) {
+              result =
+                  'Left Eye: ${faces[0].leftEyeOpenProbability}, Right Eye: ${faces[0].rightEyeOpenProbability}, Smile: ${faces[0].smilingProbability}';
+            }
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(result)));
           }
         },
         tooltip: 'Capture',
