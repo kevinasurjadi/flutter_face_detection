@@ -69,6 +69,13 @@ class _HomePageState extends State<HomePage> {
     );
     var faces = await faceDetector.processImage(_getInputImage(image));
     if (faces.isNotEmpty) {
+      if (faces[0].leftEyeOpenProbability! < 0.25 &&
+          faces[0].rightEyeOpenProbability! < 0.25) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _cameraController.stopImageStream();
+          _capture();
+        });
+      }
       _faceStream.add(faces[0]);
     }
   }
