@@ -21,6 +21,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late CameraController _cameraController;
   late BehaviorSubject<Face> _faceStream;
+  late BehaviorSubject<CameraImage> _imageStream;
 
   bool _cameraInitialized = false;
 
@@ -84,7 +85,9 @@ class _HomePageState extends State<HomePage> {
             .lockCaptureOrientation(DeviceOrientation.landscapeLeft);
       }
       setState(() {
-        _cameraController.startImageStream(_processImage);
+        _cameraController.startImageStream((image) {
+          _imageStream.add(image);
+        });
         _cameraInitialized = true;
       });
     });
@@ -93,8 +96,12 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     _initializeCamera();
-    _faceStream = BehaviorSubject()
+    _faceStream = BehaviorSubject();
+    _imageStream = BehaviorSubject()
       ..debounceTime(const Duration(milliseconds: 500));
+    _imageStream.listen((image) {
+      _processImage(image);
+    });
     super.initState();
   }
 
@@ -102,6 +109,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _cameraController.dispose();
     _faceStream.close();
+    _imageStream.close();
     super.dispose();
   }
 
