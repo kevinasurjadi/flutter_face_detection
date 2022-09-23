@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:camera/camera.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -21,9 +23,13 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late CameraController _cameraController;
   late BehaviorSubject<Face> _faceStream;
-  late BehaviorSubject<CameraImage> _imageStream;
+  late FaceDetector _faceDetector;
+
+  bool _isProcessingImage = false;
 
   bool _cameraInitialized = false;
+
+  Rect? _faceBox;
 
   Future<XFile> _capture() async {
     return _cameraController.takePicture();
@@ -64,20 +70,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _processImage(CameraImage image) async {
-    var faceDetector = FaceDetector(
-      options: FaceDetectorOptions(enableClassification: true),
-    );
-    var faces = await faceDetector.processImage(_getInputImage(image));
+    _isProcessingImage = true;
+    var faces = await _faceDetector.processImage(_getInputImage(image));
     if (faces.isNotEmpty) {
       if (faces[0].leftEyeOpenProbability! < 0.25 &&
           faces[0].rightEyeOpenProbability! < 0.25) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _cameraController.stopImageStream();
+        Future.delayed(const Duration(milliseconds: 500), () async {
+          await _cameraController.stopImageStream();
           _capture();
         });
       }
+      _faceBox = faces[0].boundingBox;
       _faceStream.add(faces[0]);
     }
+    _isProcessingImage = false;
   }
 
   void _initializeCamera() async {
@@ -90,10 +96,15 @@ class _HomePageState extends State<HomePage> {
           !androidInfo.isPhysicalDevice!) {
         await _cameraController
             .lockCaptureOrientation(DeviceOrientation.landscapeLeft);
+      } else {
+        await _cameraController
+            .lockCaptureOrientation(DeviceOrientation.portraitUp);
       }
       setState(() {
         _cameraController.startImageStream((image) {
-          _imageStream.add(image);
+          if (!_isProcessingImage && !_cameraController.value.isTakingPicture) {
+            _processImage(image);
+          }
         });
         _cameraInitialized = true;
       });
@@ -102,13 +113,14 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void initState() {
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        enableClassification: true,
+        enableLandmarks: true,
+      ),
+    );
     _initializeCamera();
     _faceStream = BehaviorSubject();
-    _imageStream = BehaviorSubject()
-      ..debounceTime(const Duration(milliseconds: 500));
-    _imageStream.listen((image) {
-      _processImage(image);
-    });
     super.initState();
   }
 
@@ -116,12 +128,16 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _cameraController.dispose();
     _faceStream.close();
-    _imageStream.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    var screenRatio = MediaQuery.of(context).size.aspectRatio;
+    var cameraRatio =
+        _cameraInitialized ? _cameraController.value.aspectRatio : 1;
+    var scale = screenRatio * cameraRatio;
+    if (scale < 1) scale = 1 / scale;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
@@ -129,26 +145,35 @@ class _HomePageState extends State<HomePage> {
       body: Stack(
         children: [
           _cameraInitialized
-              ? ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.center,
-                    child: FittedBox(
-                      fit: BoxFit.fitWidth,
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width,
-                        height: MediaQuery.of(context).size.height /
-                            _cameraController.value.aspectRatio,
-                        child: AspectRatio(
-                          aspectRatio: _cameraController.value.aspectRatio,
-                          child: CameraPreview(_cameraController),
-                        ),
-                      ),
-                    ),
+              ? SizedBox(
+                  width: MediaQuery.of(context).size.width,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: CameraPreview(_cameraController),
                   ),
                 )
               : const Center(
                   child: CircularProgressIndicator(),
                 ),
+          _faceBox != null
+              ? Positioned(
+                  right: _faceBox!.left * _cameraController.value.aspectRatio,
+                  top: _faceBox!.top * _cameraController.value.aspectRatio,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.red,
+                        width: 4,
+                      ),
+                    ),
+                    width:
+                        _faceBox!.width * _cameraController.value.aspectRatio,
+                    height: _faceBox!.height *
+                        _cameraController.value.aspectRatio /
+                        2.5,
+                  ),
+                )
+              : const SizedBox(),
           Positioned(
             top: 20,
             left: MediaQuery.of(context).size.width / 2 - 110 / 2,
